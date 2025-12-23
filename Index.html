@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Arix Signature Interactive Christmas Tree</title>
+
+  <!-- 字体：中文祝福更稳 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --bg:#020806;
+      --emerald:#0b3b2e;
+      --gold:#d4af37;
+      --goldHi:#ffd68a;
+      --text:#eaeaea;
+    }
+
+    html,body{height:100%;margin:0;background:radial-gradient(circle at top, #06261d, var(--bg)); overflow:hidden;}
+    body{font-family: Inter,"Noto Sans SC",system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--text);}
+
+    #app{position:fixed; inset:0;}
+    canvas.webgl{position:absolute; inset:0; width:100%; height:100%; display:block;}
+
+    /* 顶部标题：金属流光 */
+    .overlay-root{ position:fixed; inset:0; pointer-events:none; }
+    .mc-title{
+      position:absolute;
+      top: 24px;
+      left: 26px;
+      font-size: 42px;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+
+      background: linear-gradient(
+        110deg,
+        rgba(255,214,138,0.95) 0%,
+        rgba(212,175,55,1) 22%,
+        rgba(255,245,210,0.98) 42%,
+        rgba(212,175,55,1) 62%,
+        rgba(255,214,138,0.95) 100%
+      );
+      background-size: 240% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+
+      filter: drop-shadow(0 10px 18px rgba(0,0,0,0.35))
+              drop-shadow(0 0 22px rgba(212,175,55,0.18));
+      animation: goldSweep 3.6s linear infinite;
+      user-select:none;
+    }
+    @keyframes goldSweep{
+      0%{ background-position: 0% 50%; }
+      100%{ background-position: 240% 50%; }
+    }
+
+    /* 角落提示 */
+    .hint{
+      position:absolute; right:18px; bottom:18px;
+      max-width: 360px;
+      font-size: 12px;
+      line-height: 1.5;
+      opacity:.75;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(212,175,55,0.18);
+      backdrop-filter: blur(10px);
+      user-select:none;
+    }
+    .hint b{color:var(--goldHi); font-weight:600;}
+
+    /* 手势线框 UI（你要求 bottom:55px） */
+    .hand-tracker-container{
+      position: fixed;
+      left: 18px;
+      bottom: 55px;
+      width: 220px;
+      height: 160px;
+      pointer-events: none;
+      border-radius: 14px;
+      background: rgba(2, 8, 6, 0.55);
+      border: 1px solid rgba(212, 175, 55, 0.22);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+      overflow: hidden;
+    }
+    .hand-tracker-container canvas{
+      width:100%; height:100%; display:block;
+    }
+
+    /* 权限按钮 */
+    .perm{
+      position:absolute; left:18px; top:92px;
+      display:flex; gap:10px; align-items:center;
+      pointer-events:auto;
+    }
+    .btn{
+      border: 1px solid rgba(212,175,55,0.28);
+      background: rgba(0,0,0,0.35);
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor:pointer;
+      font-size: 12px;
+      backdrop-filter: blur(10px);
+    }
+    .btn:hover{ border-color: rgba(255,214,138,0.5); }
+    .status{ font-size:12px; opacity:.8; }
+
+    /*模拟小水印*/
+    .brand{
+      position:absolute; left:26px; top:74px;
+      font-size:12px; opacity:.7; letter-spacing:.12em;
+      color: rgba(234,234,234,0.75);
+      user-select:none;
+    }
+
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas class="webgl" id="c"></canvas>
+
+    <div class="overlay-root">
+      <div class="mc-title">Merry Christmas</div>
+      <div class="brand">ARIX · SIGNATURE</div>
+
+      <div class="perm">
+        <button class="btn" id="btnCam">启用手势控制</button>
+        <div class="status" id="camStatus">（未启用摄像头）</div>
+      </div>
+
+      <div class="hand-tracker-container" aria-hidden>
+        <canvas id="handCanvas" width="220" height="160"></canvas>
+      </div>
+
+      <div class="hint">
+        点击背景：<b>散落 / 成树</b><br/>
+        手势：<b>张开=散落</b>，<b>握拳=成树</b>；<b>单手拖拽旋转</b>；<b>上下移动缩放</b>；<b>双捏合×2 聚焦/解锁文字</b><br/>
+        点击任意祝福文本：直接聚焦
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+  // ===== Three.js imports (CDN, 无需安装任何软件) =====
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
+  import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
+  import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+
+  // ====== 基础配置 ======
+  const canvas = document.getElementById("c");
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x020806, 0.06);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+
+  const camera = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(0, 1.3, 10);
+
+  // Composer + Bloom（电影感辉光）
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.25, 0.65, 0.35
+  );
+  composer.addPass(bloom);
+
+  // 灯光：金碧辉煌 + 祖母绿反射
+  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+  const dir = new THREE.DirectionalLight(0xffffff, 2.2);
+  dir.position.set(6,10,6);
+  scene.add(dir);
+
+  const p1 = new THREE.PointLight(0xFFD58A, 18, 22);
+  p1.position.set(-4, 2, 4);
+  scene.add(p1);
+
+  const p2 = new THREE.PointLight(0x2AAE7B, 10, 18);
+  p2.position.set(3, -1, -3);
+  scene.add(p2);
+
+  // ====== 状态机（TreeMorphState） ======
+  const TreeMorphState = {
+    SCATTERED: "SCATTERED",
+    TREE_SHAPE: "TREE_SHAPE",
+  };
+
+  const morph = {
+    current: TreeMorphState.SCATTERED,
+    target: TreeMorphState.SCATTERED,
+    morphT: 0,
+    speed: 0.9,
+  };
+
+  function easeInOutCubic(t){
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+  }
+
+  // ====== 双位置系统（scatterPosition + treePosition） ======
+  function rand01(seed){
+    const x = Math.sin(seed * 9999.123) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function generateScatterPosition(i, radius=7.2){
+    const u = rand01(i*17.1);
+    const v = rand01(i*91.7);
+    const w = rand01(i*43.3);
+    const theta = 2*Math.PI*u;
+    const phi = Math.acos(2*v - 1);
+    const r = radius * Math.pow(w, 0.25);
+    const x = r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.cos(phi);
+    const z = r * Math.sin(phi) * Math.sin(theta);
+    return new THREE.Vector3(x,y,z);
+  }
+
+  function generateTreeConePosition(i, count, height=8.6, baseRadius=3.4){
+    const t = i / Math.max(1, count-1);
+    const yNorm = Math.pow(t, 0.78);
+    const y = (yNorm - 0.5) * height;
+    const radius = (1 - yNorm) * baseRadius;
+
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const angle = i * goldenAngle;
+
+    const jitter = (rand01(i*12.77) - 0.5) * 0.12 * radius;
+    const x = Math.cos(angle) * (radius + jitter);
+    const z = Math.sin(angle) * (radius + jitter);
+    return new THREE.Vector3(x,y,z);
+  }
+
+  function buildDualPositions(count){
+    const out = new Array(count);
+    for(let i=0;i<count;i++){
+      out[i] = {
+        scatter: generateScatterPosition(i, 7.2),
+        tree: generateTreeConePosition(i, count, 8.6, 3.4),
+        seed: rand01(i*101.13)
+      };
+    }
+    return out;
+  }
+
+  // ====== 粒子层（InstancedMesh） ======
+  const treeGroup = new THREE.Group();
+  scene.add(treeGroup);
+
+  const tempObj = new THREE.Object3D();
+
+  function makeLayer({count, geometry, material, scale=1}){
+    const dual = buildDualPositions(count);
+    const mesh = new THREE.InstancedMesh(geometry, material, count);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    treeGroup.add(mesh);
+
+    return { mesh, dual, count, scale };
+  }
+
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color("#D4AF37"),
+    metalness: 1,
+    roughness: 0.18,
+    emissive: new THREE.Color("#2A1A00"),
+    emissiveIntensity: 0.35
+  });
+
+  const emeraldMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color("#0B3B2E"),
+    metalness: 0.15,
+    roughness: 0.08,
+    transmission: 0.65,
+    thickness: 0.6,
+    clearcoat: 1,
+    clearcoatRoughness: 0.08,
+    ior: 1.45,
+    emissive: new THREE.Color("#06261D"),
+    emissiveIntensity: 0.25
+  });
+
+  const layerGold = makeLayer({
+    count: 9000,
+    geometry: new THREE.IcosahedronGeometry(0.035, 0),
+    material: goldMat,
+    scale: 1.0
+  });
+
+  const layerEmerald = makeLayer({
+    count: 1400,
+    geometry: new THREE.SphereGeometry(0.05, 12, 12),
+    material: emeraldMat,
+    scale: 2.1
+  });
+
+  // ====== 围绕树的可聚焦中文文本（Sprite Canvas Texture） ======
+  const wishes = [
+    "祝裘阿姨圣诞快乐",
+    "要身体健康！！",
+    "更擅长发现生活中的美好！！",
+    "所爱之人心想事成！！",
+    "被更多的人尊敬",
+    "继续做自己！！",
+    "万事顺遂，心想事成❤️",
+    "2025.12.24 & 25",
+    "from：xxx"
+  ];
+
+  function makeTextTexture(text, { fg="#FFD58A", bg="rgba(2,8,6,0.35)", stroke="rgba(212,175,55,0.35)" }={}){
+    const padX = 26, padY = 18;
+    const font = '600 44px "Noto Sans SC", "Inter", system-ui, sans-serif';
+
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+
+    ctx.font = font;
+    const metrics = ctx.measureText(text);
+    const w = Math.ceil(metrics.width + padX*2);
+    const h = Math.ceil(60 + padY*2);
+
+    c.width = w; c.height = h;
+    ctx.font = font;
+
+    // 背景 & 边框（奢华但克制）
+    ctx.fillStyle = bg;
+    roundRect(ctx, 0, 0, w, h, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 3;
+    roundRect(ctx, 3, 3, w-6, h-6, 16);
+    ctx.stroke();
+
+    // 文本（带金属光晕）
+    ctx.shadowColor = "rgba(212,175,55,0.28)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = fg;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, padX, h/2);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  const textSprites = [];
+  const textGroup = new THREE.Group();
+  treeGroup.add(textGroup);
+
+  function placeTexts(){
+    // 让文本围绕树一圈，略有高低起伏
+    const baseR = 3.9;
+    for(let i=0;i<wishes.length;i++){
+      const t = i / wishes.length;
+      const ang = t * Math.PI * 2 + (i%2?0.35:-0.18);
+      const r = baseR + (i%3)*0.35;
+      const y = -2.0 + t*4.8 + (rand01(i*9.7)-0.5)*0.35;
+
+      const tex = makeTextTexture(wishes[i]);
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: true,
+        depthWrite: false
+      });
+      const sp = new THREE.Sprite(mat);
+
+      // sprite 尺寸（世界单位）：与屏幕大小关系由距离决定
+      const wScale = 1.6 + wishes[i].length*0.03;
+      sp.scale.set(wScale, 0.55, 1);
+
+      sp.position.set(Math.cos(ang)*r, y, Math.sin(ang)*r);
+      sp.userData.id = i;
+      sp.userData.text = wishes[i];
+      sp.userData.basePos = sp.position.clone();
+      textGroup.add(sp);
+      textSprites.push(sp);
+    }
+  }
+  placeTexts();
+
+  // ====== 聚焦文本：独立 Mesh 覆盖（renderOrder=9999 / depthTest=false） ======
+  let focusLocked = false;
+  let focusedId = null;
+
+  const focusPlaneGeo = new THREE.PlaneGeometry(1, 1);
+  const focusMat = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.0,
+    depthTest: false,
+    depthWrite: false,
+    color: 0xffffff
+  });
+  const focusPlane = new THREE.Mesh(focusPlaneGeo, focusMat);
+  focusPlane.renderOrder = 9999;
+  scene.add(focusPlane);
+
+  // 用于进场动画
+  let enterT = 0;
+
+  function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
+  function filmOvershoot(t, amp=0.035, freq=12, decay=14){
+    const base = easeOutCubic(t);
+    const gate = t < 0.65 ? 1 : 0;
+    const wobble = Math.sin(t * Math.PI * freq) * Math.exp(-decay * t);
+    return base + gate * amp * wobble;
+  }
+  function expSmoothingAlpha(dt, k){ return 1 - Math.exp(-k*dt); }
+
+  function lockToText(id){
+    const sp = textSprites.find(s => s.userData.id === id);
+    if(!sp) return;
+
+    focusLocked = true;
+    focusedId = id;
+
+    // 隐藏 instance 中该文本（这里是 sprite：我们直接隐藏）
+    sp.visible = false;
+
+    // 把纹理拿来给 focusPlane
+    focusMat.map = sp.material.map;
+    focusMat.needsUpdate = true;
+
+    enterT = 0;
+  }
+
+  function unlockText(){
+    if(focusedId !== null){
+      const sp = textSprites.find(s => s.userData.id === focusedId);
+      if(sp) sp.visible = true;
+    }
+    focusLocked = false;
+    focusedId = null;
+  }
+
+  function toggleTextFocusAuto(){
+    if(focusLocked){
+      unlockText();
+      return;
+    }
+    // 自动选最近（屏幕中心距离最小）
+    let best = null;
+    let bestD = Infinity;
+    const v = new THREE.Vector3();
+
+    for(const sp of textSprites){
+      if(!sp.visible) continue;
+      v.copy(sp.position).applyMatrix4(treeGroup.matrixWorld);
+      v.project(camera);
+
+      // 屏幕中心 (0,0)，v.x v.y 在 -1..1
+      const d = Math.hypot(v.x, v.y);
+      if(d < bestD){
+        bestD = d;
+        best = sp.userData.id;
+      }
+    }
+    if(best !== null) lockToText(best);
+  }
+
+  // 点击文本直接聚焦
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  window.addEventListener("pointerdown", (e) => {
+    // 如果点在按钮上，不处理
+    if(e.target && (e.target.id === "btnCam")) return;
+
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(textSprites.filter(s => s.visible), true);
+    if(hits.length){
+      const sp = hits[0].object;
+      lockToText(sp.userData.id);
+      return;
+    }
+
+    // 点空白：切换树形态
+    morph.target = (morph.target === TreeMorphState.TREE_SHAPE)
+      ? TreeMorphState.SCATTERED
+      : TreeMorphState.TREE_SHAPE;
+  });
+
+  // ====== 旋转/缩放控制（可由手势驱动，也可鼠标辅助） ======
+  let rotX = 0;
+  let rotY = 0;
+  let camDist = 10;
+
+  // 鼠标拖拽备用（没有手势也能玩）
+  let dragging = false;
+  let lastX = 0, lastY = 0;
+  window.addEventListener("pointerdown", (e)=>{
+    if(e.target && (e.target.id === "btnCam")) return;
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+  });
+  window.addEventListener("pointerup", ()=> dragging=false);
+  window.addEventListener("pointermove", (e)=>{
+    if(!dragging) return;
+    const dx = (e.clientX - lastX)/window.innerWidth;
+    const dy = (e.clientY - lastY)/window.innerHeight;
+    lastX = e.clientX; lastY = e.clientY;
+    rotY += dx * 3.2;
+    rotX = THREE.MathUtils.clamp(rotX + dy * 2.2, -0.6, 0.35);
+  });
+  window.addEventListener("wheel", (e)=>{
+    camDist = THREE.MathUtils.clamp(camDist + e.deltaY*0.0025, 6.5, 14);
+  }, {passive:true});
+
+  // ====== 动画循环 ======
+  const clock = new THREE.Clock();
+
+  function updateLayer(layer, time, t){
+    const { mesh, dual, count, scale } = layer;
+    for(let i=0;i<count;i++){
+      const { scatter, tree, seed } = dual[i];
+      tempObj.position.lerpVectors(scatter, tree, t);
+
+      const float = Math.sin((seed * 10 + time) * 1.2) * 0.03;
+      tempObj.position.y += (1 - t) * float;
+
+      const r = seed * Math.PI * 2;
+      tempObj.rotation.set(r*(1-t), r*0.5, r*t);
+
+      const s = scale*(0.6 + seed*0.8);
+      tempObj.scale.setScalar(s);
+
+      tempObj.updateMatrix();
+      mesh.setMatrixAt(i, tempObj.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    const time = clock.elapsedTime;
+
+    // 状态机推进 morphT
+    if(morph.target !== morph.current){
+      const dir = (morph.target === TreeMorphState.TREE_SHAPE) ? 1 : -1;
+      morph.morphT = THREE.MathUtils.clamp(morph.morphT + dir*morph.speed*dt, 0, 1);
+      const done = (dir===1 && morph.morphT>=1) || (dir===-1 && morph.morphT<=0);
+      if(done) morph.current = morph.target;
+    }
+
+    const t = easeInOutCubic(morph.morphT);
+
+    // 树整体：旋转
+    treeGroup.rotation.x = rotX;
+    treeGroup.rotation.y = rotY;
+
+    // 相机缩放（沿 Z）
+    camDist = THREE.MathUtils.clamp(camDist, 6.5, 14);
+    camera.position.z = THREE.MathUtils.lerp(camera.position.z, camDist, expSmoothingAlpha(dt, 10));
+    camera.lookAt(0, 0.2, 0);
+
+    // 文本轻微漂浮（不影响聚焦）
+    for(const sp of textSprites){
+      if(!sp.visible) continue;
+      const base = sp.userData.basePos;
+      sp.position.y = base.y + Math.sin(time*1.2 + sp.userData.id*0.7)*0.08;
+    }
+
+    // 更新 instanced 粒子
+    updateLayer(layerGold, time, t);
+    updateLayer(layerEmerald, time, t);
+
+    // 聚焦文字覆盖层（相机前）
+    // 关键：renderOrder + depthTest=false 已经设置在材质中
+    const dirV = new THREE.Vector3();
+    camera.getWorldDirection(dirV);
+
+    // enterT：锁定时 0->1，解锁时 1->0
+    const speed = focusLocked ? 2.6 : 3.2;
+    enterT = THREE.MathUtils.clamp(enterT + (focusLocked?1:-1)*speed*dt, 0, 1);
+
+    const dist = focusLocked ? 1.35 : 0.95;
+    const targetPos = camera.position.clone().add(dirV.multiplyScalar(dist));
+    focusPlane.position.lerp(targetPos, expSmoothingAlpha(dt, 14));
+    focusPlane.quaternion.slerp(camera.quaternion, expSmoothingAlpha(dt, 16));
+
+    const s0 = 0.82, s1 = 1.18;
+    const scaleT = filmOvershoot(enterT, 0.035, 12, 14);
+    const scale = THREE.MathUtils.lerp(s0, s1, scaleT);
+
+    // 让 plane 宽高匹配纹理比例
+    if(focusMat.map && focusMat.map.image){
+      const img = focusMat.map.image;
+      const ar = img.width / img.height;
+      focusPlane.scale.set(1.65*scale*ar, 0.55*scale, 1);
+    }else{
+      focusPlane.scale.set(2.2*scale, 0.75*scale, 1);
+    }
+
+    focusMat.opacity = easeOutCubic(enterT);
+    focusPlane.visible = focusMat.opacity > 0.01;
+
+    composer.render();
+  }
+  animate();
+
+  // ====== Resize ======
+  window.addEventListener("resize", ()=>{
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  // ====== MediaPipe HandLandmarker（可选：点击按钮开启） ======
+  const btnCam = document.getElementById("btnCam");
+  const camStatus = document.getElementById("camStatus");
+  const handCanvas = document.getElementById("handCanvas");
+  const handCtx = handCanvas.getContext("2d");
+
+  let handEnabled = false;
+  let videoEl = null;
+  let landmarker = null;
+  let rafHand = null;
+
+  // landmarks index（21 点）
+  const TIP = { thumb:4, index:8, middle:12, ring:16, pinky:20 };
+  const PIP = { index:6, middle:10, ring:14, pinky:18 };
+  const WRIST = 0;
+
+  function dist2(a,b){
+    const dx=a.x-b.x, dy=a.y-b.y;
+    return Math.hypot(dx,dy);
+  }
+  function isFingerExtended(lm, tip, pip){ return lm[tip].y < lm[pip].y; }
+  function isFingerBent(lm, tip, pip){ return lm[tip].y > lm[pip].y; }
+
+  function detectSpread(lm){
+    const ext =
+      isFingerExtended(lm, TIP.index, PIP.index) &&
+      isFingerExtended(lm, TIP.middle, PIP.middle) &&
+      isFingerExtended(lm, TIP.ring, PIP.ring) &&
+      isFingerExtended(lm, TIP.pinky, PIP.pinky);
+    const thumbIndexOpen = dist2(lm[TIP.thumb], lm[TIP.index]) > 0.10;
+    return ext && thumbIndexOpen;
+  }
+  function detectFist(lm){
+    const bent =
+      isFingerBent(lm, TIP.index, PIP.index) &&
+      isFingerBent(lm, TIP.middle, PIP.middle) &&
+      isFingerBent(lm, TIP.ring, PIP.ring) &&
+      isFingerBent(lm, TIP.pinky, PIP.pinky);
+    const palm = lm[WRIST];
+    const nearPalm = dist2(lm[TIP.index], palm) < 0.18 && dist2(lm[TIP.middle], palm) < 0.18;
+    return bent && nearPalm;
+  }
+  function detectPinch(lm){
+    return dist2(lm[TIP.thumb], lm[TIP.index]) < 0.055;
+  }
+
+  function drawWireframe(lm){
+    handCtx.clearRect(0,0,handCanvas.width, handCanvas.height);
+    // points
+    handCtx.globalAlpha = 0.95;
+    for(let i=0;i<lm.length;i++){
+      const x = lm[i].x * handCanvas.width;
+      const y = lm[i].y * handCanvas.height;
+      handCtx.beginPath();
+      handCtx.arc(x,y,2.6,0,Math.PI*2);
+      handCtx.fillStyle = "rgba(255, 215, 128, 0.95)";
+      handCtx.fill();
+    }
+    // chains
+    const chains = [
+      [0,1,2,3,4],
+      [0,5,6,7,8],
+      [0,9,10,11,12],
+      [0,13,14,15,16],
+      [0,17,18,19,20],
+      [5,9,13,17,5],
+    ];
+    handCtx.lineWidth = 1.4;
+    handCtx.strokeStyle = "rgba(42, 174, 123, 0.85)";
+    for(const c of chains){
+      handCtx.beginPath();
+      for(let i=0;i<c.length;i++){
+        const p = lm[c[i]];
+        const x = p.x * handCanvas.width;
+        const y = p.y * handCanvas.height;
+        if(i===0) handCtx.moveTo(x,y);
+        else handCtx.lineTo(x,y);
+      }
+      handCtx.stroke();
+    }
+  }
+
+  // 手势驱动（旋转/缩放）
+  let prevWrist = null;
+  let pinchDown = false;
+  let lastPinchTime = null;
+  let pinchCount = 0;
+
+  async function enableHands(){
+    if(handEnabled) return;
+    handEnabled = true;
+    camStatus.textContent = "（正在请求摄像头权限…）";
+
+    // 动态 import mediapipe tasks
+    const mp = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+    const { FilesetResolver, HandLandmarker } = mp;
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:"user" }, audio:false });
+    videoEl = document.createElement("video");
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = true;
+    videoEl.srcObject = stream;
+    await videoEl.play();
+
+    const fileset = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+
+    // 模型：直接用 CDN（不用你手动放 models 文件）
+    landmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+      },
+      runningMode: "VIDEO",
+      numHands: 2,
+    });
+
+    camStatus.textContent = "（手势控制已启用）";
+
+    const loop = ()=>{
+      rafHand = requestAnimationFrame(loop);
+      if(!landmarker || !videoEl) return;
+
+      const now = performance.now();
+      const res = landmarker.detectForVideo(videoEl, now);
+
+      const hands = res.landmarks || [];
+      if(!hands.length){
+        prevWrist = null;
+        handCtx.clearRect(0,0,handCanvas.width,handCanvas.height);
+        return;
+      }
+
+      const lm = hands[0]; // 第一只手为主控
+      drawWireframe(lm);
+
+      const spread = detectSpread(lm);
+      const fist = detectFist(lm);
+      const pinch = detectPinch(lm);
+
+      // 状态切换
+      if(spread) morph.target = TreeMorphState.SCATTERED;
+      else if(fist) morph.target = TreeMorphState.TREE_SHAPE;
+
+      // 双捏合：聚焦/解锁（上升沿）
+      if(pinch && !pinchDown){
+        pinchDown = true;
+        const t = performance.now();
+        if(lastPinchTime && (t - lastPinchTime) < 350) pinchCount += 1;
+        else pinchCount = 1;
+        lastPinchTime = t;
+
+        if(pinchCount >= 2){
+          pinchCount = 0;
+          toggleTextFocusAuto();
+        }
+      }
+      if(!pinch) pinchDown = false;
+
+      // 单手拖拽旋转 + 垂直缩放（避开强手势）
+      if(!spread && !fist){
+        const wrist = lm[WRIST];
+        if(prevWrist){
+          const dx = wrist.x - prevWrist.x;
+          const dy = wrist.y - prevWrist.y;
+          rotY += dx * 3.2;
+          rotX = THREE.MathUtils.clamp(rotX + dy * 2.2, -0.6, 0.35);
+          camDist = THREE.MathUtils.clamp(camDist + dy * 6.0, 6.5, 14);
+        }
+        prevWrist = { x:wrist.x, y:wrist.y };
+      }else{
+        prevWrist = null;
+      }
+    };
+    loop();
+  }
+
+  function disableHands(){
+    handEnabled = false;
+    camStatus.textContent = "（未启用摄像头）";
+    if(rafHand) cancelAnimationFrame(rafHand);
+    rafHand = null;
+
+    if(landmarker && landmarker.close) landmarker.close();
+    landmarker = null;
+
+    if(videoEl && videoEl.srcObject){
+      const s = videoEl.srcObject;
+      s.getTracks().forEach(t=>t.stop());
+    }
+    videoEl = null;
+    handCtx.clearRect(0,0,handCanvas.width,handCanvas.height);
+  }
+
+  btnCam.addEventListener("click", async ()=>{
+    try{
+      if(handEnabled) disableHands();
+      else await enableHands();
+      btnCam.textContent = handEnabled ? "关闭手势控制" : "启用手势控制";
+    }catch(e){
+      console.error(e);
+      camStatus.textContent = "（启用失败：请检查浏览器权限/HTTPS）";
+      handEnabled = false;
+    }
+  });
+
+</script>
+</body>
+</html>

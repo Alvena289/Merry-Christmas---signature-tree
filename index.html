@@ -148,27 +148,17 @@
   </div>
 
 <script type="module">
-    // ===== 错误面板：手机也能看到报错 =====
-  const errBox = document.createElement("pre");
-  errBox.style.cssText =
-    "position:fixed;left:12px;right:12px;top:120px;max-height:40vh;overflow:auto;" +
-    "z-index:99999;padding:12px;border-radius:12px;" +
-    "background:rgba(0,0,0,.65);border:1px solid rgba(255,214,138,.35);" +
-    "color:#ffd68a;font-size:12px;line-height:1.4;white-space:pre-wrap;display:none;";
-  document.body.appendChild(errBox);
+<!-- Three.js 非 module 版：更兼容手机/内置浏览器 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
-  function showErr(e) {
-    errBox.style.display = "block";
-    errBox.textContent += "\n" + (e?.stack || e?.message || String(e));
-  }
-  window.addEventListener("error", (e) => showErr(e.error || e.message));
-  window.addEventListener("unhandledrejection", (e) => showErr(e.reason));
-  // ===== Three.js imports (CDN, 无需安装任何软件) =====
-  import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { EffectComposer } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
-  // ====== 基础配置 ======
+<script>
+  // ===== 强制可见的调试 HUD（一定会出现） =====
+  const hud = document.createElement("div");
+  hud.style.cssText = "position:fixed;left:12px;top:140px;z-index:999999;background:rgba(0,0,0,.65);border:1px solid rgba(255,214,138,.35);color:#ffd68a;padding:10px 12px;border-radius:12px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;max-width:92vw";
+  hud.textContent = "JS: running...";
+  document.body.appendChild(hud);
+
+  // ===== 基础场景 =====
   const canvas = document.getElementById("c");
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x020806, 0.06);
@@ -183,16 +173,7 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 100);
   camera.position.set(0, 1.3, 10);
 
-  // Composer + Bloom（电影感辉光）
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.25, 0.65, 0.35
-  );
-  composer.addPass(bloom);
-
-  // 灯光：金碧辉煌 + 祖母绿反射
+  // 灯光
   scene.add(new THREE.AmbientLight(0xffffff, 0.25));
   const dir = new THREE.DirectionalLight(0xffffff, 2.2);
   dir.position.set(6,10,6);
@@ -206,42 +187,30 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
   p2.position.set(3, -1, -3);
   scene.add(p2);
 
-  // ====== 状态机（TreeMorphState） ======
-  const TreeMorphState = {
-    SCATTERED: "SCATTERED",
-    TREE_SHAPE: "TREE_SHAPE",
-  };
-
-  const morph = {
-    current: TreeMorphState.SCATTERED,
-    target: TreeMorphState.SCATTERED,
-    morphT: 0,
-    speed: 0.9,
-  };
+  // ===== 状态机 =====
+  const TreeMorphState = { SCATTERED:"SCATTERED", TREE_SHAPE:"TREE_SHAPE" };
+  const morph = { current:TreeMorphState.SCATTERED, target:TreeMorphState.SCATTERED, morphT:0, speed:0.9 };
 
   function easeInOutCubic(t){
     return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
   }
 
-  // ====== 双位置系统（scatterPosition + treePosition） ======
+  // ===== 双位置系统 =====
   function rand01(seed){
     const x = Math.sin(seed * 9999.123) * 43758.5453;
     return x - Math.floor(x);
   }
-
   function generateScatterPosition(i, radius=7.2){
-    const u = rand01(i*17.1);
-    const v = rand01(i*91.7);
-    const w = rand01(i*43.3);
+    const u = rand01(i*17.1), v = rand01(i*91.7), w = rand01(i*43.3);
     const theta = 2*Math.PI*u;
     const phi = Math.acos(2*v - 1);
     const r = radius * Math.pow(w, 0.25);
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.cos(phi);
-    const z = r * Math.sin(phi) * Math.sin(theta);
-    return new THREE.Vector3(x,y,z);
+    return new THREE.Vector3(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.cos(phi),
+      r * Math.sin(phi) * Math.sin(theta)
+    );
   }
-
   function generateTreeConePosition(i, count, height=8.6, baseRadius=3.4){
     const t = i / Math.max(1, count-1);
     const yNorm = Math.pow(t, 0.78);
@@ -251,12 +220,13 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
     const goldenAngle = Math.PI * (3 - Math.sqrt(5));
     const angle = i * goldenAngle;
 
-    const jitter = (rand01(i*12.77) - 0.5) * 0.12 * radius;
-    const x = Math.cos(angle) * (radius + jitter);
-    const z = Math.sin(angle) * (radius + jitter);
-    return new THREE.Vector3(x,y,z);
+    const jitter = (rand01(i*12.77)-0.5) * 0.12 * radius;
+    return new THREE.Vector3(
+      Math.cos(angle) * (radius + jitter),
+      y,
+      Math.sin(angle) * (radius + jitter)
+    );
   }
-
   function buildDualPositions(count){
     const out = new Array(count);
     for(let i=0;i<count;i++){
@@ -269,7 +239,7 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
     return out;
   }
 
-  // ====== 粒子层（InstancedMesh） ======
+  // ===== 树主体（InstancedMesh） =====
   const treeGroup = new THREE.Group();
   scene.add(treeGroup);
 
@@ -280,7 +250,6 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
     const mesh = new THREE.InstancedMesh(geometry, material, count);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     treeGroup.add(mesh);
-
     return { mesh, dual, count, scale };
   }
 
@@ -306,249 +275,18 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
   });
 
   const layerGold = makeLayer({
-    count: 9000,
+    count: 7000,
     geometry: new THREE.IcosahedronGeometry(0.035, 0),
     material: goldMat,
     scale: 1.0
   });
 
   const layerEmerald = makeLayer({
-    count: 1400,
+    count: 1200,
     geometry: new THREE.SphereGeometry(0.05, 12, 12),
     material: emeraldMat,
     scale: 2.1
   });
-
-  // ====== 围绕树的可聚焦中文文本（Sprite Canvas Texture） ======
-  const wishes = [
-    "祝裘阿姨圣诞快乐",
-    "要身体健康！！",
-    "更擅长发现生活中的美好！！",
-    "所爱之人心想事成！！",
-    "被更多的人尊敬",
-    "继续做自己！！",
-    "万事顺遂，心想事成❤️",
-    "2025.12.24 & 25",
-    "from：xxx"
-  ];
-
-  function makeTextTexture(text, { fg="#FFD58A", bg="rgba(2,8,6,0.35)", stroke="rgba(212,175,55,0.35)" }={}){
-    const padX = 26, padY = 18;
-    const font = '600 44px "Noto Sans SC", "Inter", system-ui, sans-serif';
-
-    const c = document.createElement("canvas");
-    const ctx = c.getContext("2d");
-
-    ctx.font = font;
-    const metrics = ctx.measureText(text);
-    const w = Math.ceil(metrics.width + padX*2);
-    const h = Math.ceil(60 + padY*2);
-
-    c.width = w; c.height = h;
-    ctx.font = font;
-
-    // 背景 & 边框（奢华但克制）
-    ctx.fillStyle = bg;
-    roundRect(ctx, 0, 0, w, h, 18);
-    ctx.fill();
-
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 3;
-    roundRect(ctx, 3, 3, w-6, h-6, 16);
-    ctx.stroke();
-
-    // 文本（带金属光晕）
-    ctx.shadowColor = "rgba(212,175,55,0.28)";
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = fg;
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, padX, h/2);
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    tex.needsUpdate = true;
-    return tex;
-  }
-
-  function roundRect(ctx, x, y, w, h, r){
-    ctx.beginPath();
-    ctx.moveTo(x+r,y);
-    ctx.arcTo(x+w,y,x+w,y+h,r);
-    ctx.arcTo(x+w,y+h,x,y+h,r);
-    ctx.arcTo(x,y+h,x,y,r);
-    ctx.arcTo(x,y,x+w,y,r);
-    ctx.closePath();
-  }
-
-  const textSprites = [];
-  const textGroup = new THREE.Group();
-  treeGroup.add(textGroup);
-
-  function placeTexts(){
-    // 让文本围绕树一圈，略有高低起伏
-    const baseR = 3.9;
-    for(let i=0;i<wishes.length;i++){
-      const t = i / wishes.length;
-      const ang = t * Math.PI * 2 + (i%2?0.35:-0.18);
-      const r = baseR + (i%3)*0.35;
-      const y = -2.0 + t*4.8 + (rand01(i*9.7)-0.5)*0.35;
-
-      const tex = makeTextTexture(wishes[i]);
-      const mat = new THREE.SpriteMaterial({
-        map: tex,
-        transparent: true,
-        opacity: 0.95,
-        depthTest: true,
-        depthWrite: false
-      });
-      const sp = new THREE.Sprite(mat);
-
-      // sprite 尺寸（世界单位）：与屏幕大小关系由距离决定
-      const wScale = 1.6 + wishes[i].length*0.03;
-      sp.scale.set(wScale, 0.55, 1);
-
-      sp.position.set(Math.cos(ang)*r, y, Math.sin(ang)*r);
-      sp.userData.id = i;
-      sp.userData.text = wishes[i];
-      sp.userData.basePos = sp.position.clone();
-      textGroup.add(sp);
-      textSprites.push(sp);
-    }
-  }
-  placeTexts();
-
-  // ====== 聚焦文本：独立 Mesh 覆盖（renderOrder=9999 / depthTest=false） ======
-  let focusLocked = false;
-  let focusedId = null;
-
-  const focusPlaneGeo = new THREE.PlaneGeometry(1, 1);
-  const focusMat = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: 0.0,
-    depthTest: false,
-    depthWrite: false,
-    color: 0xffffff
-  });
-  const focusPlane = new THREE.Mesh(focusPlaneGeo, focusMat);
-  focusPlane.renderOrder = 9999;
-  scene.add(focusPlane);
-
-  // 用于进场动画
-  let enterT = 0;
-
-  function easeOutCubic(t){ return 1 - Math.pow(1 - t, 3); }
-  function filmOvershoot(t, amp=0.035, freq=12, decay=14){
-    const base = easeOutCubic(t);
-    const gate = t < 0.65 ? 1 : 0;
-    const wobble = Math.sin(t * Math.PI * freq) * Math.exp(-decay * t);
-    return base + gate * amp * wobble;
-  }
-  function expSmoothingAlpha(dt, k){ return 1 - Math.exp(-k*dt); }
-
-  function lockToText(id){
-    const sp = textSprites.find(s => s.userData.id === id);
-    if(!sp) return;
-
-    focusLocked = true;
-    focusedId = id;
-
-    // 隐藏 instance 中该文本（这里是 sprite：我们直接隐藏）
-    sp.visible = false;
-
-    // 把纹理拿来给 focusPlane
-    focusMat.map = sp.material.map;
-    focusMat.needsUpdate = true;
-
-    enterT = 0;
-  }
-
-  function unlockText(){
-    if(focusedId !== null){
-      const sp = textSprites.find(s => s.userData.id === focusedId);
-      if(sp) sp.visible = true;
-    }
-    focusLocked = false;
-    focusedId = null;
-  }
-
-  function toggleTextFocusAuto(){
-    if(focusLocked){
-      unlockText();
-      return;
-    }
-    // 自动选最近（屏幕中心距离最小）
-    let best = null;
-    let bestD = Infinity;
-    const v = new THREE.Vector3();
-
-    for(const sp of textSprites){
-      if(!sp.visible) continue;
-      v.copy(sp.position).applyMatrix4(treeGroup.matrixWorld);
-      v.project(camera);
-
-      // 屏幕中心 (0,0)，v.x v.y 在 -1..1
-      const d = Math.hypot(v.x, v.y);
-      if(d < bestD){
-        bestD = d;
-        best = sp.userData.id;
-      }
-    }
-    if(best !== null) lockToText(best);
-  }
-
-  // 点击文本直接聚焦
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-
-  window.addEventListener("pointerdown", (e) => {
-    // 如果点在按钮上，不处理
-    if(e.target && (e.target.id === "btnCam")) return;
-
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(textSprites.filter(s => s.visible), true);
-    if(hits.length){
-      const sp = hits[0].object;
-      lockToText(sp.userData.id);
-      return;
-    }
-
-    // 点空白：切换树形态
-    morph.target = (morph.target === TreeMorphState.TREE_SHAPE)
-      ? TreeMorphState.SCATTERED
-      : TreeMorphState.TREE_SHAPE;
-  });
-
-  // ====== 旋转/缩放控制（可由手势驱动，也可鼠标辅助） ======
-  let rotX = 0;
-  let rotY = 0;
-  let camDist = 10;
-
-  // 鼠标拖拽备用（没有手势也能玩）
-  let dragging = false;
-  let lastX = 0, lastY = 0;
-  window.addEventListener("pointerdown", (e)=>{
-    if(e.target && (e.target.id === "btnCam")) return;
-    dragging = true; lastX = e.clientX; lastY = e.clientY;
-  });
-  window.addEventListener("pointerup", ()=> dragging=false);
-  window.addEventListener("pointermove", (e)=>{
-    if(!dragging) return;
-    const dx = (e.clientX - lastX)/window.innerWidth;
-    const dy = (e.clientY - lastY)/window.innerHeight;
-    lastX = e.clientX; lastY = e.clientY;
-    rotY += dx * 3.2;
-    rotX = THREE.MathUtils.clamp(rotX + dy * 2.2, -0.6, 0.35);
-  });
-  window.addEventListener("wheel", (e)=>{
-    camDist = THREE.MathUtils.clamp(camDist + e.deltaY*0.0025, 6.5, 14);
-  }, {passive:true});
-
-  // ====== 动画循环 ======
-  const clock = new THREE.Clock();
 
   function updateLayer(layer, time, t){
     const { mesh, dual, count, scale } = layer;
@@ -571,291 +309,140 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
     mesh.instanceMatrix.needsUpdate = true;
   }
 
+  // ===== 中文祝福文本（Sprite 纹理） =====
+  const wishes = [
+    "祝裘阿姨圣诞快乐",
+    "要身体健康！！",
+    "更擅长发现生活中的美好！！",
+    "所爱之人心想事成！！",
+    "被更多的人尊敬",
+    "继续做自己！！",
+    "万事顺遂，心想事成❤️",
+    "2025.12.24 & 25",
+    "from：xxx"
+  ];
+
+  function roundRect(ctx, x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function makeTextTexture(text){
+    const padX = 26, padY = 18;
+    const font = '600 44px "Noto Sans SC", "Inter", system-ui, sans-serif';
+
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+    ctx.font = font;
+
+    const w = Math.ceil(ctx.measureText(text).width + padX*2);
+    const h = Math.ceil(60 + padY*2);
+
+    c.width = w; c.height = h;
+    ctx.font = font;
+
+    ctx.fillStyle = "rgba(2,8,6,0.35)";
+    roundRect(ctx, 0, 0, w, h, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(212,175,55,0.35)";
+    ctx.lineWidth = 3;
+    roundRect(ctx, 3, 3, w-6, h-6, 16);
+    ctx.stroke();
+
+    ctx.shadowColor = "rgba(212,175,55,0.28)";
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = "#FFD58A";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, padX, h/2);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  const textSprites = [];
+  const textGroup = new THREE.Group();
+  treeGroup.add(textGroup);
+
+  const baseR = 3.9;
+  for(let i=0;i<wishes.length;i++){
+    const t = i / wishes.length;
+    const ang = t * Math.PI * 2 + (i%2?0.35:-0.18);
+    const r = baseR + (i%3)*0.35;
+    const y = -2.0 + t*4.8 + (rand01(i*9.7)-0.5)*0.35;
+
+    const tex = makeTextTexture(wishes[i]);
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: true,
+      depthWrite: false
+    });
+    const sp = new THREE.Sprite(mat);
+    const wScale = 1.6 + wishes[i].length*0.03;
+    sp.scale.set(wScale, 0.55, 1);
+    sp.position.set(Math.cos(ang)*r, y, Math.sin(ang)*r);
+    sp.userData.basePos = sp.position.clone();
+    textGroup.add(sp);
+    textSprites.push(sp);
+  }
+
+  // 点击切换形态
+  window.addEventListener("pointerdown", ()=>{
+    morph.target = (morph.target === TreeMorphState.TREE_SHAPE)
+      ? TreeMorphState.SCATTERED
+      : TreeMorphState.TREE_SHAPE;
+  });
+
+  // ===== 动画循环 =====
+  const clock = new THREE.Clock();
+  let frameCount = 0;
   function animate(){
-    frameCount++;
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
     const time = clock.elapsedTime;
+    frameCount++;
 
-    // 状态机推进 morphT
+    // HUD 每秒更新一次
+    if(frameCount % 30 === 0) hud.textContent = `JS: running...\nFrames: ${frameCount}`;
+
+    // morph 推进
     if(morph.target !== morph.current){
       const dir = (morph.target === TreeMorphState.TREE_SHAPE) ? 1 : -1;
       morph.morphT = THREE.MathUtils.clamp(morph.morphT + dir*morph.speed*dt, 0, 1);
       const done = (dir===1 && morph.morphT>=1) || (dir===-1 && morph.morphT<=0);
       if(done) morph.current = morph.target;
     }
-
     const t = easeInOutCubic(morph.morphT);
 
-    // 树整体：旋转
-    treeGroup.rotation.x = rotX;
-    treeGroup.rotation.y = rotY;
-
-    // 相机缩放（沿 Z）
-    camDist = THREE.MathUtils.clamp(camDist, 6.5, 14);
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, camDist, expSmoothingAlpha(dt, 10));
-    camera.lookAt(0, 0.2, 0);
-
-    // 文本轻微漂浮（不影响聚焦）
-    for(const sp of textSprites){
-      if(!sp.visible) continue;
+    // 文本漂浮
+    for(let i=0;i<textSprites.length;i++){
+      const sp = textSprites[i];
       const base = sp.userData.basePos;
-      sp.position.y = base.y + Math.sin(time*1.2 + sp.userData.id*0.7)*0.08;
+      sp.position.y = base.y + Math.sin(time*1.2 + i*0.7)*0.08;
     }
 
-    // 更新 instanced 粒子
     updateLayer(layerGold, time, t);
     updateLayer(layerEmerald, time, t);
 
-    // 聚焦文字覆盖层（相机前）
-    // 关键：renderOrder + depthTest=false 已经设置在材质中
-    const dirV = new THREE.Vector3();
-    camera.getWorldDirection(dirV);
-
-    // enterT：锁定时 0->1，解锁时 1->0
-    const speed = focusLocked ? 2.6 : 3.2;
-    enterT = THREE.MathUtils.clamp(enterT + (focusLocked?1:-1)*speed*dt, 0, 1);
-
-    const dist = focusLocked ? 1.35 : 0.95;
-    const targetPos = camera.position.clone().add(dirV.multiplyScalar(dist));
-    focusPlane.position.lerp(targetPos, expSmoothingAlpha(dt, 14));
-    focusPlane.quaternion.slerp(camera.quaternion, expSmoothingAlpha(dt, 16));
-
-    const s0 = 0.82, s1 = 1.18;
-    const scaleT = filmOvershoot(enterT, 0.035, 12, 14);
-    const scale = THREE.MathUtils.lerp(s0, s1, scaleT);
-
-    // 让 plane 宽高匹配纹理比例
-    if(focusMat.map && focusMat.map.image){
-      const img = focusMat.map.image;
-      const ar = img.width / img.height;
-      focusPlane.scale.set(1.65*scale*ar, 0.55*scale, 1);
-    }else{
-      focusPlane.scale.set(2.2*scale, 0.75*scale, 1);
-    }
-
-    focusMat.opacity = easeOutCubic(enterT);
-    focusPlane.visible = focusMat.opacity > 0.01;
-
-    composer.render();
+    camera.lookAt(0, 0.2, 0);
+    renderer.render(scene, camera);
   }
   animate();
 
-  // ====== Resize ======
   window.addEventListener("resize", ()=>{
     renderer.setSize(window.innerWidth, window.innerHeight);
-    composer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
   });
-
-  // ====== MediaPipe HandLandmarker（可选：点击按钮开启） ======
-  const btnCam = document.getElementById("btnCam");
-  const camStatus = document.getElementById("camStatus");
-  const handCanvas = document.getElementById("handCanvas");
-  const handCtx = handCanvas.getContext("2d");
-
-  let handEnabled = false;
-  let videoEl = null;
-  let landmarker = null;
-  let rafHand = null;
-
-  // landmarks index（21 点）
-  const TIP = { thumb:4, index:8, middle:12, ring:16, pinky:20 };
-  const PIP = { index:6, middle:10, ring:14, pinky:18 };
-  const WRIST = 0;
-
-  function dist2(a,b){
-    const dx=a.x-b.x, dy=a.y-b.y;
-    return Math.hypot(dx,dy);
-  }
-  function isFingerExtended(lm, tip, pip){ return lm[tip].y < lm[pip].y; }
-  function isFingerBent(lm, tip, pip){ return lm[tip].y > lm[pip].y; }
-
-  function detectSpread(lm){
-    const ext =
-      isFingerExtended(lm, TIP.index, PIP.index) &&
-      isFingerExtended(lm, TIP.middle, PIP.middle) &&
-      isFingerExtended(lm, TIP.ring, PIP.ring) &&
-      isFingerExtended(lm, TIP.pinky, PIP.pinky);
-    const thumbIndexOpen = dist2(lm[TIP.thumb], lm[TIP.index]) > 0.10;
-    return ext && thumbIndexOpen;
-  }
-  function detectFist(lm){
-    const bent =
-      isFingerBent(lm, TIP.index, PIP.index) &&
-      isFingerBent(lm, TIP.middle, PIP.middle) &&
-      isFingerBent(lm, TIP.ring, PIP.ring) &&
-      isFingerBent(lm, TIP.pinky, PIP.pinky);
-    const palm = lm[WRIST];
-    const nearPalm = dist2(lm[TIP.index], palm) < 0.18 && dist2(lm[TIP.middle], palm) < 0.18;
-    return bent && nearPalm;
-  }
-  function detectPinch(lm){
-    return dist2(lm[TIP.thumb], lm[TIP.index]) < 0.055;
-  }
-
-  function drawWireframe(lm){
-    handCtx.clearRect(0,0,handCanvas.width, handCanvas.height);
-    // points
-    handCtx.globalAlpha = 0.95;
-    for(let i=0;i<lm.length;i++){
-      const x = lm[i].x * handCanvas.width;
-      const y = lm[i].y * handCanvas.height;
-      handCtx.beginPath();
-      handCtx.arc(x,y,2.6,0,Math.PI*2);
-      handCtx.fillStyle = "rgba(255, 215, 128, 0.95)";
-      handCtx.fill();
-    }
-    // chains
-    const chains = [
-      [0,1,2,3,4],
-      [0,5,6,7,8],
-      [0,9,10,11,12],
-      [0,13,14,15,16],
-      [0,17,18,19,20],
-      [5,9,13,17,5],
-    ];
-    handCtx.lineWidth = 1.4;
-    handCtx.strokeStyle = "rgba(42, 174, 123, 0.85)";
-    for(const c of chains){
-      handCtx.beginPath();
-      for(let i=0;i<c.length;i++){
-        const p = lm[c[i]];
-        const x = p.x * handCanvas.width;
-        const y = p.y * handCanvas.height;
-        if(i===0) handCtx.moveTo(x,y);
-        else handCtx.lineTo(x,y);
-      }
-      handCtx.stroke();
-    }
-  }
-
-  // 手势驱动（旋转/缩放）
-  let prevWrist = null;
-  let pinchDown = false;
-  let lastPinchTime = null;
-  let pinchCount = 0;
-
-  async function enableHands(){
-    if(handEnabled) return;
-    handEnabled = true;
-    camStatus.textContent = "（正在请求摄像头权限…）";
-
-    // 动态 import mediapipe tasks
-    const mp = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
-    const { FilesetResolver, HandLandmarker } = mp;
-
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:"user" }, audio:false });
-    videoEl = document.createElement("video");
-    videoEl.autoplay = true;
-    videoEl.playsInline = true;
-    videoEl.muted = true;
-    videoEl.srcObject = stream;
-    await videoEl.play();
-
-    const fileset = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-    );
-
-    // 模型：直接用 CDN（不用你手动放 models 文件）
-    landmarker = await HandLandmarker.createFromOptions(fileset, {
-      baseOptions: {
-        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
-      },
-      runningMode: "VIDEO",
-      numHands: 2,
-    });
-
-    camStatus.textContent = "（手势控制已启用）";
-
-    const loop = ()=>{
-      rafHand = requestAnimationFrame(loop);
-      if(!landmarker || !videoEl) return;
-
-      const now = performance.now();
-      const res = landmarker.detectForVideo(videoEl, now);
-
-      const hands = res.landmarks || [];
-      if(!hands.length){
-        prevWrist = null;
-        handCtx.clearRect(0,0,handCanvas.width,handCanvas.height);
-        return;
-      }
-
-      const lm = hands[0]; // 第一只手为主控
-      drawWireframe(lm);
-
-      const spread = detectSpread(lm);
-      const fist = detectFist(lm);
-      const pinch = detectPinch(lm);
-
-      // 状态切换
-      if(spread) morph.target = TreeMorphState.SCATTERED;
-      else if(fist) morph.target = TreeMorphState.TREE_SHAPE;
-
-      // 双捏合：聚焦/解锁（上升沿）
-      if(pinch && !pinchDown){
-        pinchDown = true;
-        const t = performance.now();
-        if(lastPinchTime && (t - lastPinchTime) < 350) pinchCount += 1;
-        else pinchCount = 1;
-        lastPinchTime = t;
-
-        if(pinchCount >= 2){
-          pinchCount = 0;
-          toggleTextFocusAuto();
-        }
-      }
-      if(!pinch) pinchDown = false;
-
-      // 单手拖拽旋转 + 垂直缩放（避开强手势）
-      if(!spread && !fist){
-        const wrist = lm[WRIST];
-        if(prevWrist){
-          const dx = wrist.x - prevWrist.x;
-          const dy = wrist.y - prevWrist.y;
-          rotY += dx * 3.2;
-          rotX = THREE.MathUtils.clamp(rotX + dy * 2.2, -0.6, 0.35);
-          camDist = THREE.MathUtils.clamp(camDist + dy * 6.0, 6.5, 14);
-        }
-        prevWrist = { x:wrist.x, y:wrist.y };
-      }else{
-        prevWrist = null;
-      }
-    };
-    loop();
-  }
-
-  function disableHands(){
-    handEnabled = false;
-    camStatus.textContent = "（未启用摄像头）";
-    if(rafHand) cancelAnimationFrame(rafHand);
-    rafHand = null;
-
-    if(landmarker && landmarker.close) landmarker.close();
-    landmarker = null;
-
-    if(videoEl && videoEl.srcObject){
-      const s = videoEl.srcObject;
-      s.getTracks().forEach(t=>t.stop());
-    }
-    videoEl = null;
-    handCtx.clearRect(0,0,handCanvas.width,handCanvas.height);
-  }
-
-  btnCam.addEventListener("click", async ()=>{
-    try{
-      if(handEnabled) disableHands();
-      else await enableHands();
-      btnCam.textContent = handEnabled ? "关闭手势控制" : "启用手势控制";
-    }catch(e){
-      console.error(e);
-      camStatus.textContent = "（启用失败：请检查浏览器权限/HTTPS）";
-      handEnabled = false;
-    }
-  });
-
 </script>
 </body>
 </html>

@@ -176,6 +176,19 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
   <script>
+    const errBox = document.createElement("pre");
+errBox.style.cssText =
+  "position:fixed;left:12px;right:12px;top:120px;max-height:45vh;overflow:auto;" +
+  "z-index:999999;padding:12px;border-radius:12px;" +
+  "background:rgba(0,0,0,.65);border:1px solid rgba(255,214,138,.35);" +
+  "color:#ffd68a;font-size:12px;line-height:1.4;white-space:pre-wrap;display:none;";
+document.body.appendChild(errBox);
+function showErr(e){
+  errBox.style.display="block";
+  errBox.textContent += "\n" + (e?.stack || e?.message || String(e));
+}
+window.addEventListener("error",(e)=>showErr(e.error||e.message));
+window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
     const wishes = [
       "祝裘阿姨圣诞快乐",
       "要身体健康！！",

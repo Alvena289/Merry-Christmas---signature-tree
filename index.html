@@ -422,6 +422,9 @@ scene.add(testBox);
   let frameCount = 0;
   function animate(){
     requestAnimationFrame(animate);
+    testBox.rotation.y += 0.02;
+testBox.rotation.x += 0.01;
+hud.textContent = `JS: running...\nWebGL: ${glInfo}\nFrames: ${frameCount}`;
     const dt = clock.getDelta();
     const time = clock.elapsedTime;
     frameCount++;

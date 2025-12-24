@@ -572,6 +572,7 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
   }
 
   function animate(){
+    frameCount++;
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
     const time = clock.elapsedTime;

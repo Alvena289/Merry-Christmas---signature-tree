@@ -4,11 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Arix Signature Interactive Christmas Tree</title>
-
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+SC:wght@400;600;700&display=swap" rel="stylesheet">
-
   <style>
     :root{
       --bg:#020806;
@@ -20,13 +18,11 @@
     html,body{height:100%;margin:0;overflow:hidden;background:radial-gradient(circle at top, #06261d, var(--bg));}
     body{font-family: Inter,"Noto Sans SC",system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--text);}
     #app{position:fixed; inset:0;}
-
     canvas.layer{
       position:absolute; inset:0;
       width:100%; height:100%;
       display:block;
     }
-
     .overlay-root{ position:fixed; inset:0; pointer-events:none; }
     .mc-title{
       position:absolute; top: 24px; left: 26px;
@@ -52,14 +48,12 @@
       0%{ background-position: 0% 50%; }
       100%{ background-position: 240% 50%; }
     }
-
     .brand{
       position:absolute; left:26px; top:74px;
       font-size:12px; opacity:.7; letter-spacing:.12em;
       color: rgba(234,234,234,0.75);
       user-select:none;
     }
-
     .hint{
       position:absolute; right:18px; bottom:18px;
       max-width: 420px;
@@ -73,7 +67,6 @@
       user-select:none;
     }
     .hint b{color:var(--goldHi); font-weight:600;}
-
     .notice{
       position:absolute; right:18px; top:92px;
       max-width: 460px;
@@ -86,7 +79,6 @@
       user-select:none;
       display:none;
     }
-
     /* 聚焦文字覆盖 */
     .focus-overlay{
       position:fixed; inset:0;
@@ -110,7 +102,6 @@
       transition: transform .25s ease;
     }
     .focus-overlay.on .focus-card{ transform: scale(1); }
-
     .focus-text{
       font-size: 30px;
       line-height: 1.25;
@@ -143,26 +134,35 @@
     }
   </style>
 </head>
-
 <body>
   <div id="app">
     <!-- WebGL 层：能用就显示 3D -->
     <canvas class="layer" id="c3d"></canvas>
 
     <!-- 2D 兜底层：WebGL 不可用就显示 -->
-    <canvas class="layer" id="c2d" style="display:none;"></canvas>
-
+    <canvas
+  class="layer"
+  id="c2d"
+  width="1024"
+  height="1024"
+  style="
+    position:fixed;
+    inset:0;
+    width:100vw;
+    height:100vh;
+    display:block;
+    z-index:2;
+    background:rgba(255,0,0,0.18);
+  ">
+</canvas>
     <div class="overlay-root">
       <div class="mc-title">Merry Christmas</div>
       <div class="brand">ARIX · SIGNATURE</div>
-
       <div class="notice" id="notice"></div>
-
       <div class="hint">
         <div><b>点击任意祝福文本：</b>聚焦/取消聚焦</div>
         <div>（若设备支持 3D：点击背景可散落/成树）</div>
       </div>
-
       <div class="focus-overlay" id="focusOverlay">
         <div class="focus-card">
           <div class="focus-text" id="focusText">祝裘阿姨圣诞快乐</div>
@@ -171,10 +171,8 @@
       </div>
     </div>
   </div>
-
   <!-- three 非 module，更兼容 -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
   <script>
     const errBox = document.createElement("pre");
 errBox.style.cssText =
@@ -200,7 +198,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
       "2025.12.24 & 25",
       "from：xxx"
     ];
-
     const notice = document.getElementById("notice");
     const focusOverlay = document.getElementById("focusOverlay");
     const focusTextEl = document.getElementById("focusText");
@@ -209,7 +206,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
       notice.style.display = "block";
       notice.innerHTML = html;
     }
-
     function setFocus(text){
       if(!text){
         focusOverlay.classList.remove("on");
@@ -218,7 +214,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
       focusTextEl.textContent = text;
       focusOverlay.classList.add("on");
     }
-
     function canUseWebGL(){
       try{
         const t = document.createElement("canvas");
@@ -230,19 +225,15 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         return false;
       }
     }
-
     // ====== 2D 兜底：金色粒子 + 文本环绕 + 点击聚焦 ======
     function start2D(){
       const c = document.getElementById("c2d");
       const c3d = document.getElementById("c3d");
       c3d.style.display = "none";
       c.style.display = "block";
-
       showNotice("当前设备 <b>不支持 3D WebGL</b>，已自动切换为 <b>高级 2D 模式</b>（仍可点击祝福聚焦）。");
-
       const ctx = c.getContext("2d");
       let w = 0, h = 0, dpr = Math.min(2, window.devicePixelRatio || 1);
-
       function resize(){
         w = window.innerWidth; h = window.innerHeight;
         c.width = Math.floor(w * dpr);
@@ -253,9 +244,7 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
       }
       resize();
       window.addEventListener("resize", resize);
-
       const center = { x: () => w*0.52, y: () => h*0.54 };
-
       // 金色粒子（奢华但克制）
       const N = 680;
       const parts = Array.from({length:N}, (_,i)=>({
@@ -267,7 +256,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         p: Math.random()*Math.PI*2,
         s: i*0.0007 + Math.random()*0.3,
       }));
-
       // 文本环绕布局（可点击）
       const texts = wishes.map((t, i)=>({
         text: t,
@@ -279,7 +267,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         x: 0, yy: 0,
         w: 0, h: 0
       }));
-
       function measureTextBox(str){
         ctx.font = '700 22px "Noto Sans SC","Inter",system-ui,sans-serif';
         const m = ctx.measureText(str);
@@ -288,23 +275,18 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         const bh = 28 + padY*2;
         return { bw, bh, padX, padY };
       }
-
       function drawTextChip(x,y,str,hover=false){
         const { bw, bh, padX, padY } = measureTextBox(str);
-
         // 背景
         ctx.save();
         ctx.translate(x - bw/2, y - bh/2);
-
         ctx.fillStyle = "rgba(2,8,6,0.40)";
         roundRect2d(ctx, 0,0,bw,bh, 14);
         ctx.fill();
-
         ctx.strokeStyle = hover ? "rgba(255,214,138,0.55)" : "rgba(212,175,55,0.35)";
         ctx.lineWidth = 1.6;
         roundRect2d(ctx, 1,1,bw-2,bh-2, 13);
         ctx.stroke();
-
         // 文本（带辉光）
         ctx.shadowColor = "rgba(212,175,55,0.25)";
         ctx.shadowBlur = 18;
@@ -313,11 +295,9 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
         ctx.fillText(str, padX, bh/2);
-
         ctx.restore();
         return { bw, bh };
       }
-
       function roundRect2d(ctx, x, y, w, h, r){
         ctx.beginPath();
         ctx.moveTo(x+r,y);
@@ -327,10 +307,8 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         ctx.arcTo(x,y,x+w,y,r);
         ctx.closePath();
       }
-
       // 点击命中
       let focused = null;
-
       function hitTest(px,py){
         // 先测文本 chip
         for(const t of texts){
@@ -340,7 +318,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         }
         return null;
       }
-
       window.addEventListener("pointerdown", (e)=>{
         const px = e.clientX;
         const py = e.clientY;
@@ -358,15 +335,12 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
           setFocus(null);
         }
       });
-
       let t0 = performance.now();
       function loop(now){
         const dt = Math.min(0.05, (now - t0)/1000);
         t0 = now;
-
         // 背景轻微暗角
         ctx.clearRect(0,0,w,h);
-
         // 粒子
         for(const p of parts){
           p.y += p.v;
@@ -379,7 +353,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
           ctx.fill();
         }
         ctx.globalAlpha = 1;
-
         // 中心“树影”渐变（2D 也有树的重量感）
         const cx = center.x(), cy = center.y();
         const grad = ctx.createRadialGradient(cx, cy-40, 10, cx, cy, Math.min(w,h)*0.52);
@@ -388,7 +361,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         grad.addColorStop(1, "rgba(0,0,0,0.28)");
         ctx.fillStyle = grad;
         ctx.fillRect(0,0,w,h);
-
         // 文本环绕
         const swirl = now*0.00015;
         for(let i=0;i<texts.length;i++){
@@ -396,39 +368,31 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
           const ang = tt.a + swirl;
           const x = cx + Math.cos(ang) * tt.r;
           const y = cy + Math.sin(ang) * (tt.r*0.55) + tt.y*0.45 + Math.sin(now*0.002 + i*0.7)*6;
-
           // 如果聚焦，其他文字淡一点
           const dim = focused && focused.id !== tt.id ? 0.35 : 1.0;
           ctx.globalAlpha = dim;
-
           const box = drawTextChip(x, y, tt.text, focused && focused.id === tt.id);
           tt.x = x; tt.yy = y;
           tt.w = box.bw; tt.h = box.bh;
         }
         ctx.globalAlpha = 1;
-
         requestAnimationFrame(loop);
       }
       requestAnimationFrame(loop);
     }
-
     // ====== 3D：如果 WebGL 可用才启动（你电脑/手机会看到圣诞树） ======
     function start3D(){
       const canvas = document.getElementById("c3d");
-
       const scene = new THREE.Scene();
       scene.fog = new THREE.FogExp2(0x020806, 0.06);
-
       const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.05;
-
       const camera = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 100);
       camera.position.set(0, 1.3, 10);
-
       // 灯光
       scene.add(new THREE.AmbientLight(0xffffff, 0.25));
       const dir = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -440,11 +404,9 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
       const p2 = new THREE.PointLight(0x2AAE7B, 10, 18);
       p2.position.set(3, -1, -3);
       scene.add(p2);
-
       const TreeMorphState = { SCATTERED:"SCATTERED", TREE_SHAPE:"TREE_SHAPE" };
       const morph = { current:TreeMorphState.SCATTERED, target:TreeMorphState.SCATTERED, morphT:0, speed:0.9 };
       function easeInOutCubic(t){ return t<0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
-
       function rand01(seed){
         const x = Math.sin(seed * 9999.123) * 43758.5453;
         return x - Math.floor(x);
@@ -485,11 +447,9 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         }
         return out;
       }
-
       const treeGroup = new THREE.Group();
       scene.add(treeGroup);
       const tempObj = new THREE.Object3D();
-
       function makeLayer({count, geometry, material, scale=1}){
         const dual = buildDualPositions(count);
         const mesh = new THREE.InstancedMesh(geometry, material, count);
@@ -497,7 +457,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         treeGroup.add(mesh);
         return { mesh, dual, count, scale };
       }
-
       const goldMat = new THREE.MeshStandardMaterial({
         color: new THREE.Color("#D4AF37"),
         metalness: 1,
@@ -505,7 +464,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         emissive: new THREE.Color("#2A1A00"),
         emissiveIntensity: 0.35
       });
-
       const emeraldMat = new THREE.MeshPhysicalMaterial({
         color: new THREE.Color("#0B3B2E"),
         metalness: 0.15,
@@ -518,7 +476,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         emissive: new THREE.Color("#06261D"),
         emissiveIntensity: 0.25
       });
-
       const layerGold = makeLayer({
         count: 2000,
         geometry: new THREE.IcosahedronGeometry(0.035, 0),
@@ -537,22 +494,17 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         for(let i=0;i<count;i++){
           const { scatter, tree, seed } = dual[i];
           tempObj.position.lerpVectors(scatter, tree, t);
-
           const float = Math.sin((seed * 10 + time) * 1.2) * 0.03;
           tempObj.position.y += (1 - t) * float;
-
           const r = seed * Math.PI * 2;
           tempObj.rotation.set(r*(1-t), r*0.5, r*t);
-
           const s = scale*(0.6 + seed*0.8);
           tempObj.scale.setScalar(s);
-
           tempObj.updateMatrix();
           mesh.setMatrixAt(i, tempObj.matrix);
         }
         mesh.instanceMatrix.needsUpdate = true;
       }
-
       // 文本 sprites
       function roundRect(ctx, x, y, w, h, r){
         ctx.beginPath();
@@ -573,36 +525,30 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         const h = Math.ceil(60 + padY*2);
         c.width = w; c.height = h;
         ctx.font = font;
-
         ctx.fillStyle = "rgba(2,8,6,0.35)";
         roundRect(ctx, 0,0,w,h, 18); ctx.fill();
         ctx.strokeStyle = "rgba(212,175,55,0.35)";
         ctx.lineWidth = 3;
         roundRect(ctx, 3,3,w-6,h-6, 16); ctx.stroke();
-
         ctx.shadowColor = "rgba(212,175,55,0.28)";
         ctx.shadowBlur = 18;
         ctx.fillStyle = "#FFD58A";
         ctx.textBaseline = "middle";
         ctx.fillText(text, padX, h/2);
-
         const tex = new THREE.CanvasTexture(c);
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.needsUpdate = true;
         return tex;
       }
-
       const textSprites = [];
       const textGroup = new THREE.Group();
       treeGroup.add(textGroup);
-
       const baseR = 3.9;
       for(let i=0;i<wishes.length;i++){
         const t = i / wishes.length;
         const ang = t * Math.PI * 2 + (i%2?0.35:-0.18);
         const r = baseR + (i%3)*0.35;
         const y = -2.0 + t*4.8 + (rand01(i*9.7)-0.5)*0.35;
-
         const tex = makeTextTexture(wishes[i]);
         const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity:0.95, depthWrite:false });
         const sp = new THREE.Sprite(mat);
@@ -615,16 +561,13 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         textGroup.add(sp);
         textSprites.push(sp);
       }
-
       // 点击：文字聚焦 / 空白切形态
       const raycaster = new THREE.Raycaster();
       const mouse = new THREE.Vector2();
-
       window.addEventListener("pointerdown", (e)=>{
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
-
         const hits = raycaster.intersectObjects(textSprites, true);
         if(hits.length){
           const sp = hits[0].object;
@@ -634,12 +577,10 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         setFocus(null);
         morph.target = (morph.target === TreeMorphState.TREE_SHAPE) ? TreeMorphState.SCATTERED : TreeMorphState.TREE_SHAPE;
       });
-
       // 点击空白也可以关聚焦（Overlay 也是 pointer-events:none，所以这里直接关）
       window.addEventListener("keydown", (e)=>{
         if(e.key === "Escape") setFocus(null);
       });
-
       // 简单镜头互动（鼠标拖拽）
       let rotX = 0, rotY = 0;
       let dragging = false, lx=0, ly=0;
@@ -653,13 +594,11 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
         rotY += dx*3.2;
         rotX = THREE.MathUtils.clamp(rotX + dy*2.2, -0.6, 0.35);
       });
-
       const clock = new THREE.Clock();
       function animate(){
         requestAnimationFrame(animate);
         const dt = clock.getDelta();
         const time = clock.elapsedTime;
-
         if(morph.target !== morph.current){
           const dir = (morph.target === TreeMorphState.TREE_SHAPE) ? 1 : -1;
           morph.morphT = THREE.MathUtils.clamp(morph.morphT + dir*morph.speed*dt, 0, 1);
@@ -667,31 +606,25 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
           if(done) morph.current = morph.target;
         }
         const t = easeInOutCubic(morph.morphT);
-
         treeGroup.rotation.x = rotX;
         treeGroup.rotation.y = rotY;
-
         for(let i=0;i<textSprites.length;i++){
           const sp = textSprites[i];
           const base = sp.userData.basePos;
           sp.position.y = base.y + Math.sin(time*1.2 + i*0.7)*0.08;
         }
-
         updateLayer(layerGold, time, t);
         updateLayer(layerEmerald, time, t);
-
         camera.lookAt(0, 0.2, 0);
         renderer.render(scene, camera);
       }
       animate();
-
       window.addEventListener("resize", ()=>{
         renderer.setSize(window.innerWidth, window.innerHeight);
         camera.aspect = window.innerWidth/window.innerHeight;
         camera.updateProjectionMatrix();
       });
     }
-
     // ===== 启动：自动选择 3D or 2D =====
     if (canUseWebGL()) {
       // 3D
@@ -699,8 +632,6 @@ window.addEventListener("unhandledrejection",(e)=>showErr(e.reason));
     } else {
       // 2D fallback
       start2D();
-    }
-
-    // 聚焦层：点击任意地方关闭（让交互更自然）
+    }   // 聚焦层：点击任意地方关闭（让交互更自然）
     window.addEventListener("pointerdown", (e)=>{
       // 如果点到了 overlay 的聚焦文字区域，仍然允许通过再次点击关闭

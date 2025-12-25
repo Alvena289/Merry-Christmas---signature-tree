@@ -5,6 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Magical Christmas Tree & Fireworks v14</title>
     <style>
+        /* Hand wireframe UI (bottom-left, 55px) */
+        .hand-tracker-container {
+         position: absolute;
+         left: 18px;
+         bottom: 55px;
+         width: 220px;
+         height: 160px;
+         z-index: 60;
+         pointer-events: none;
+         border-radius: 14px;
+         background: rgba(2, 8, 6, 0.55);
+         border: 1px solid rgba(212, 175, 55, 0.22);
+         box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+         backdrop-filter: blur(10px);
+         overflow: hidden;
+        }
+
+        .hand-tracker-container canvas {
+         width: 100%;
+         height: 100%;
+         display: block;
+        }
         body { margin: 0; overflow: hidden; background-color: #02040c; font-family: 'Times New Roman', serif; user-select: none; }
         
         /* 1. Scene Layers */
@@ -164,7 +186,11 @@
         <video id="webcam" autoplay playsinline style="display:none;"></video>
         <canvas id="webcam-preview"></canvas>
     </div>
-
+    <!-- HAND WIREFRAME UI (BOTTOM LEFT) -->
+    <div class="hand-tracker-container">
+        <canvas id="hand-wireframe" width="220" height="160"></canvas>
+    </div>
+    
     <script>
         // --- GLOBAL VARIABLES ---
         let userPhotos = [];
@@ -326,11 +352,162 @@
         // ==========================================
         const CONFIG = { colors: { bg: 0x02040c, gold: 0xffd966, green: 0x03180a, red: 0x990000 }, particles: { count: 1800, treeHeight: 24, treeRadius: 8.5 }, snow: { count: 1500, speed: 3.5 }, camera: { z: 50 } };
         // FIXED: hasExpandedOnce lock
-        const STATE = { mode: 'TREE', focusTarget: null, hand: { detected: false, x: 0, y: 0 }, rotation: { x: 0, y: 0 }, photoIndex: -1, hasExpandedOnce: false, interactionEnabled: false };
+        const STATE = {
+          mode: 'TREE',
+          focusTarget: null,
+          hand: {
+            detected: false,
+            x: 0, y: 0, 
+            prevWrist: null
+          },
+         rotation: { x: 0, y: 0 },
+         photoIndex: -1,
+         hasExpandedOnce: false,
+         interactionEnabled: false,
+         cameraZ: 50,
+         cameraZTarget: 50
+       };
         let scene, camera, renderer, composer, mainGroup; 
         let clock = new THREE.Clock();
         let particleSystem = []; let snowSystem;
         let handLandmarker, video, webcamCanvas, webcamCtx;
+        // ------------------------------
+        // HAND GESTURE HELPERS
+        // ------------------------------
+        const HAND_UI = {
+          canvas: document.getElementById("hand-wireframe"),
+          ctx: null
+        };
+        HAND_UI.ctx = HAND_UI.canvas.getContext("2d");
+
+        const LM = {
+          WRIST: 0,
+          THUMB_TIP: 4,
+          INDEX_TIP: 8,
+          MIDDLE_TIP: 12,
+          RING_TIP: 16,
+          PINKY_TIP: 20,
+          INDEX_PIP: 6,
+          MIDDLE_PIP: 10,
+          RING_PIP: 14,
+          PINKY_PIP: 18,
+          PALM_REF: 9 // middle MCP
+      };
+
+     function lmdist(a, b) {
+       const dx = a.x - b.x, dy = a.y - b.y;
+       return Math.hypot(dx, dy);
+     }
+
+    function isFingerExtended(lm, tip, pip) {
+      // image y grows downwards; extended finger => tip is above pip => smaller y
+      return lm[tip].y < lm[pip].y;
+    }
+
+    function detectSpread(lm) {
+      const ext =
+        isFingerExtended(lm, LM.INDEX_TIP, LM.INDEX_PIP) &&
+        isFingerExtended(lm, LM.MIDDLE_TIP, LM.MIDDLE_PIP) &&
+        isFingerExtended(lm, LM.RING_TIP, LM.RING_PIP) &&
+        isFingerExtended(lm, LM.PINKY_TIP, LM.PINKY_PIP);
+
+     const thumbIndexOpen = lmdist(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]) > 0.10;
+     return ext && thumbIndexOpen;
+   }
+
+   function detectFist(lm) {
+     // tips close to palm reference
+     const palm = lm[LM.PALM_REF];
+     const near =
+       lmdist(lm[LM.INDEX_TIP], palm) < 0.12 &&
+       lmdist(lm[LM.MIDDLE_TIP], palm) < 0.12 &&
+       lmdist(lm[LM.RING_TIP], palm) < 0.12 &&
+       lmdist(lm[LM.PINKY_TIP], palm) < 0.12;
+
+    // thumb also closer in
+    const thumbNear = lmdist(lm[LM.THUMB_TIP], palm) < 0.16;
+    return near && thumbNear;
+  }
+
+  function detectPinch(lm) {
+    // thumb tip to index tip
+    return lmdist(lm[LM.THUMB_TIP], lm[LM.INDEX_TIP]) < 0.055;
+  }
+
+  // Double pinch detector (two pinch "downs" within 350ms)
+  const PINCH = {
+    down: false,
+    lastTime: null,
+    count: 0
+  };
+
+  function updateDoublePinch(isPinching) {
+    const now = performance.now();
+
+    if (isPinching && !PINCH.down) {
+      PINCH.down = true;
+
+   if (PINCH.lastTime && (now - PINCH.lastTime) < 350) {
+      PINCH.count += 1;
+    } else {
+      PINCH.count = 1;
+    }
+    PINCH.lastTime = now;
+
+    if (PINCH.count >= 2) {
+      PINCH.count = 0;
+      return true; // double pinch triggered
+    }
+  }
+
+  if (!isPinching) PINCH.down = false;
+  return false;
+}
+
+// Hand wireframe drawing
+function drawHandWireframe(lm) {
+  const ctx = HAND_UI.ctx;
+  const w = HAND_UI.canvas.width;
+  const h = HAND_UI.canvas.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // points
+  ctx.globalAlpha = 0.95;
+  for (let i = 0; i < lm.length; i++) {
+    const x = lm[i].x * w;
+    const y = lm[i].y * h;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255, 215, 128, 0.95)";
+    ctx.fill();
+  }
+
+  // simple chains
+  const chains = [
+    [0, 1, 2, 3, 4],
+    [0, 5, 6, 7, 8],
+    [0, 9, 10, 11, 12],
+    [0, 13, 14, 15, 16],
+    [0, 17, 18, 19, 20],
+    [5, 9, 13, 17, 5],
+  ];
+
+  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = "rgba(42, 174, 123, 0.85)";
+
+  for (const c of chains) {
+    ctx.beginPath();
+    for (let i = 0; i < c.length; i++) {
+      const p = lm[c[i]];
+      const x = p.x * w;
+      const y = p.y * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
         let raycaster = new THREE.Raycaster(); let mouse = new THREE.Vector2();
 
         window.startThreeEngine = function() {
@@ -377,6 +554,8 @@
             scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.015); 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 2, CONFIG.camera.z); 
+            STATE.cameraZ = CONFIG.camera.z;
+            STATE.cameraZTarget = CONFIG.camera.z;
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -599,55 +778,107 @@
         }
 
         let lastVideoTime = -1;
-        async function predictWebcam() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                if (handLandmarker) {
-                    const result = handLandmarker.detectForVideo(video, performance.now());
-                    if (result.landmarks.length > 0) {
-                        // FIXED: Check enable flag
-                        if (!STATE.interactionEnabled) return;
 
-                        STATE.hand.detected = true;
-                        const lm = result.landmarks[0];
-                        const wrist = lm[0];
-                        const tips = [lm[8], lm[12], lm[16], lm[20]];
-                        let avgDist = 0; tips.forEach(t => avgDist += Math.hypot(t.x-wrist.x, t.y-wrist.y));
-                        avgDist /= 4;
-                        const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-                        
-                        if (STATE.mode === 'FOCUS') {
-                            // Sticky exit
-                            if (pinchDist > 0.08) {
-                                changeState('SCATTER'); 
-                            }
-                        } else {
-                            if (pinchDist < 0.05) {
-                                // FIXED: Strict Sequential Logic
-                                const photos = particleSystem.filter(p => p.type === 'PHOTO');
-                                if (photos.length > 0) {
-                                    STATE.mode = 'FOCUS';
-                                    STATE.photoIndex = (STATE.photoIndex + 1) % photos.length;
-                                    STATE.focusTarget = photos[STATE.photoIndex].mesh;
-                                }
-                            } else if (avgDist < 0.25) {
-                                changeState('TREE');
-                            } else if (avgDist > 0.4) {
-                                changeState('SCATTER');
-                            }
-                        }
-                        STATE.hand.x = (lm[9].x - 0.5) * 2; STATE.hand.y = (lm[9].y - 0.5) * 2;
-                    } else {
-                        STATE.hand.detected = false;
-                    }
-                }
-            }
-            requestAnimationFrame(predictWebcam);
+async function predictWebcam() {
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+
+    if (handLandmarker) {
+      const result = handLandmarker.detectForVideo(video, performance.now());
+
+      if (result.landmarks.length > 0) {
+        if (!STATE.interactionEnabled) {
+          requestAnimationFrame(predictWebcam);
+          return;
         }
+
+        STATE.hand.detected = true;
+
+        const lm = result.landmarks[0];
+
+        // Draw wireframe UI
+        drawHandWireframe(lm);
+
+        // Gesture states
+        const isSpread = detectSpread(lm);
+        const isFist = detectFist(lm);
+        const isPinching = detectPinch(lm);
+        const doublePinch = updateDoublePinch(isPinching);
+
+        // 1) Spread -> SCATTER (CHAOS)
+        if (isSpread) {
+          if (STATE.mode !== "SCATTER") changeState("SCATTER");
+        }
+
+        // 2) Fist -> TREE (FORMED)
+        if (isFist) {
+          if (STATE.mode !== "TREE") changeState("TREE");
+        }
+
+        // 3) Double pinch -> toggle FOCUS (enter/exit)
+        if (doublePinch) {
+          if (STATE.mode === "FOCUS") {
+            changeState("SCATTER");
+          } else {
+            const photos = particleSystem.filter(p => p.type === "PHOTO");
+            if (photos.length > 0) {
+              STATE.mode = "FOCUS";
+              STATE.photoIndex = (STATE.photoIndex + 1) % photos.length;
+              STATE.focusTarget = photos[STATE.photoIndex].mesh;
+            }
+          }
+        }
+
+        // 4) Single-hand drag: wrist delta controls rotation
+        // Only when not in strong "fist/spread" to avoid jitter
+        const wrist = lm[LM.WRIST];
+        if (!isFist && !isSpread) {
+          if (STATE.hand.prevWrist) {
+            const dx = wrist.x - STATE.hand.prevWrist.x;
+            const dy = wrist.y - STATE.hand.prevWrist.y;
+
+            // Rotation deltas
+            const rotYDelta = dx * 3.2;  // sensitivity
+            const rotXDelta = dy * 2.2;
+
+            STATE.rotation.y += rotYDelta;
+            STATE.rotation.x += rotXDelta;
+            STATE.rotation.x = Math.max(-0.7, Math.min(0.45, STATE.rotation.x));
+
+            // 5) Vertical move controls zoom (camera z)
+            // Move hand up => zoom in; move hand down => zoom out
+            const zoomDelta = dy * 55; // sensitivity
+            STATE.cameraZTarget = Math.max(28, Math.min(75, STATE.cameraZTarget + zoomDelta));
+          }
+
+          STATE.hand.prevWrist = { x: wrist.x, y: wrist.y };
+        } else {
+          STATE.hand.prevWrist = null;
+        }
+
+        // Keep these for optional use (your original had lm[9])
+        STATE.hand.x = (lm[LM.PALM_REF].x - 0.5) * 2;
+        STATE.hand.y = (lm[LM.PALM_REF].y - 0.5) * 2;
+
+      } else {
+        STATE.hand.detected = false;
+        STATE.hand.prevWrist = null;
+
+        // Clear wireframe when no hand
+        HAND_UI.ctx.clearRect(0, 0, HAND_UI.canvas.width, HAND_UI.canvas.height);
+      }
+    }
+  }
+
+  requestAnimationFrame(predictWebcam);
+}
 
         function animate() {
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
+            // Smooth camera zoom towards target
+            STATE.cameraZ += (STATE.cameraZTarget - STATE.cameraZ) * 4.0 * dt;
+            camera.position.z = STATE.cameraZ;
             fwCtx.clearRect(0, 0, fwWidth, fwHeight);
             fwCtx.globalCompositeOperation = 'lighter';
             let sIdx = smokes.length; while(sIdx--) { if(!smokes[sIdx].update()) smokes.splice(sIdx, 1); else smokes[sIdx].draw(); }
@@ -662,12 +893,10 @@
                 }
                 snowSystem.geometry.attributes.position.needsUpdate = true;
             }
-            if (STATE.mode === 'SCATTER' && STATE.hand.detected) {
-                const tx = STATE.hand.y * Math.PI * 0.25; const ty = STATE.hand.x * Math.PI * 0.9;
-                STATE.rotation.x += (tx - STATE.rotation.x) * 3 * dt; STATE.rotation.y += (ty - STATE.rotation.y) * 3 * dt;
-            } else {
-                if (STATE.mode === 'TREE') STATE.rotation.y += 0.3 * dt; else STATE.rotation.y += 0.1 * dt;
-                STATE.rotation.x *= 0.95; 
+            if (!STATE.hand.detected) {
+            if (STATE.mode === 'TREE') STATE.rotation.y += 0.3 * dt;
+            else STATE.rotation.y += 0.1 * dt;
+            STATE.rotation.x *= 0.96;
             }
             mainGroup.rotation.x = STATE.rotation.x; mainGroup.rotation.y = STATE.rotation.y;
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
